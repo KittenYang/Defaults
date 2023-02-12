@@ -2,8 +2,8 @@ import Foundation
 import CoreGraphics
 
 extension Defaults {
-	public typealias NativeType = DefaultsNativeType
-	public typealias CodableType = DefaultsCodableType
+	public typealias NativeType = _DefaultsNativeType
+	public typealias CodableType = _DefaultsCodableType
 }
 
 extension Data: Defaults.NativeType {
@@ -198,7 +198,7 @@ extension Defaults.SetAlgebraSerializable where Self: Defaults.NativeType, Eleme
 	public typealias CodableForm = [Element.CodableForm]
 }
 
-extension Defaults.CodableType where Self: RawRepresentable, NativeForm: RawRepresentable, RawValue == NativeForm.RawValue {
+extension Defaults.CodableType where Self: RawRepresentable<NativeForm.RawValue>, NativeForm: RawRepresentable {
 	public func toNative() -> NativeForm {
 		NativeForm(rawValue: rawValue)!
 	}

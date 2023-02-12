@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 import XCTest
-import Defaults
+@testable import Defaults
 
 let fixtureURL = URL(string: "https://sindresorhus.com")!
 let fixtureFileURL = URL(string: "file://~/icon.png")!
@@ -15,6 +15,8 @@ extension Defaults.Keys {
 	static let data = Key<Data>("data", default: Data([]))
 	static let date = Key<Date>("date", default: fixtureDate)
 	static let uuid = Key<UUID?>("uuid")
+	static let defaultDynamicDate = Key<Date>("defaultDynamicOptionalDate") { Date(timeIntervalSince1970: 0) }
+	static let defaultDynamicOptionalDate = Key<Date?>("defaultDynamicOptionalDate") { Date(timeIntervalSince1970: 1) }
 }
 
 final class DefaultsTests: XCTestCase {
@@ -35,6 +37,15 @@ final class DefaultsTests: XCTestCase {
 		XCTAssertTrue(Defaults[key])
 	}
 
+	func testValidKeyName() {
+		let validKey = Defaults.Key<Bool>("test", default: false)
+		let containsDotKey = Defaults.Key<Bool>("test.a", default: false)
+		let startsWithAtKey = Defaults.Key<Bool>("@test", default: false)
+		XCTAssertTrue(Defaults.isValidKeyPath(name: validKey.name))
+		XCTAssertFalse(Defaults.isValidKeyPath(name: containsDotKey.name))
+		XCTAssertFalse(Defaults.isValidKeyPath(name: startsWithAtKey.name))
+	}
+
 	func testOptionalKey() {
 		let key = Defaults.Key<Bool?>("independentOptionalKey")
 		let url = Defaults.Key<URL?>("independentOptionalURLKey")
@@ -52,6 +63,17 @@ final class DefaultsTests: XCTestCase {
 		Defaults[url] = fixtureURL2
 		XCTAssertFalse(Defaults[key]!)
 		XCTAssertEqual(Defaults[url], fixtureURL2)
+	}
+
+	func testInitializeDynamicDateKey() {
+		_ = Defaults.Key<Date>("independentInitializeDynamicDateKey") {
+			XCTFail("Init dynamic key should not trigger getter")
+			return Date()
+		}
+		_ = Defaults.Key<Date?>("independentInitializeDynamicOptionalDateKey") {
+			XCTFail("Init dynamic optional key should not trigger getter")
+			return Date()
+		}
 	}
 
 	func testKeyRegistersDefault() {
@@ -100,6 +122,27 @@ final class DefaultsTests: XCTestCase {
 		XCTAssertEqual(Defaults[.date], newDate)
 	}
 
+	func testDynamicDateType() {
+		XCTAssertEqual(Defaults[.defaultDynamicDate], Date(timeIntervalSince1970: 0))
+		let next = Date(timeIntervalSince1970: 1)
+		Defaults[.defaultDynamicDate] = next
+		XCTAssertEqual(Defaults[.defaultDynamicDate], next)
+		XCTAssertEqual(UserDefaults.standard.object(forKey: Defaults.Key<Date>.defaultDynamicDate.name) as! Date, next)
+		Defaults.Key<Date>.defaultDynamicDate.reset()
+		XCTAssertEqual(Defaults[.defaultDynamicDate], Date(timeIntervalSince1970: 0))
+	}
+
+	func testDynamicOptionalDateType() {
+		XCTAssertEqual(Defaults[.defaultDynamicOptionalDate], Date(timeIntervalSince1970: 1))
+		let next = Date(timeIntervalSince1970: 2)
+		Defaults[.defaultDynamicOptionalDate] = next
+		XCTAssertEqual(Defaults[.defaultDynamicOptionalDate], next)
+		XCTAssertEqual(UserDefaults.standard.object(forKey: Defaults.Key<Date>.defaultDynamicOptionalDate.name) as! Date, next)
+		Defaults[.defaultDynamicOptionalDate] = nil
+		XCTAssertEqual(Defaults[.defaultDynamicOptionalDate], Date(timeIntervalSince1970: 1))
+		XCTAssertNil(UserDefaults.standard.object(forKey: Defaults.Key<Date>.defaultDynamicOptionalDate.name))
+	}
+
 	func testFileURLType() {
 		XCTAssertEqual(Defaults[.file], fixtureFileURL)
 	}
@@ -133,7 +176,6 @@ final class DefaultsTests: XCTestCase {
 		Defaults.removeAll(suite: customSuite)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObserveKeyCombine() {
 		let key = Defaults.Key<Bool>("observeKey", default: false)
 		let expect = expectation(description: "Observation closure being called")
@@ -159,7 +201,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObserveOptionalKeyCombine() {
 		let key = Defaults.Key<Bool?>("observeOptionalKey")
 		let expect = expectation(description: "Observation closure being called")
@@ -188,7 +229,37 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
+	func testDynamicOptionalDateTypeCombine() {
+		let first = Date(timeIntervalSince1970: 0)
+		let second = Date(timeIntervalSince1970: 1)
+		let third = Date(timeIntervalSince1970: 2)
+		let key = Defaults.Key<Date?>("combineDynamicOptionalDateKey") { first }
+		let expect = expectation(description: "Observation closure being called")
+
+		let publisher = Defaults
+			.publisher(key, options: [])
+			.map { ($0.oldValue, $0.newValue) }
+			.collect(3)
+
+		let expectedValues: [(Date?, Date?)] = [(first, second), (second, third), (third, first)]
+
+		let cancellable = publisher.sink { actualValues in
+			for (expected, actual) in zip(expectedValues, actualValues) {
+				XCTAssertEqual(expected.0, actual.0)
+				XCTAssertEqual(expected.1, actual.1)
+			}
+
+			expect.fulfill()
+		}
+
+		Defaults[key] = second
+		Defaults[key] = third
+		Defaults.reset(key)
+		cancellable.cancel()
+
+		waitForExpectations(timeout: 10)
+	}
+
 	func testObserveMultipleKeysCombine() {
 		let key1 = Defaults.Key<String>("observeKey1", default: "x")
 		let key2 = Defaults.Key<Bool>("observeKey2", default: true)
@@ -207,7 +278,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObserveMultipleOptionalKeysCombine() {
 		let key1 = Defaults.Key<String?>("observeOptionalKey1")
 		let key2 = Defaults.Key<Bool?>("observeOptionalKey2")
@@ -226,7 +296,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testReceiveValueBeforeSubscriptionCombine() {
 		let key = Defaults.Key<String>("receiveValueBeforeSubscription", default: "hello")
 		let expect = expectation(description: "Observation closure being called")
@@ -317,6 +386,26 @@ final class DefaultsTests: XCTestCase {
 		}
 
 		Defaults[key] = fixtureURL2
+
+		waitForExpectations(timeout: 10)
+	}
+
+	func testObserveDynamicOptionalDateKey() {
+		let first = Date(timeIntervalSince1970: 0)
+		let second = Date(timeIntervalSince1970: 1)
+		let key = Defaults.Key<Date?>("observeDynamicOptionalDate") { first }
+
+		let expect = expectation(description: "Observation closure being called")
+
+		var observation: Defaults.Observation!
+		observation = Defaults.observe(key, options: []) { change in
+			XCTAssertEqual(change.oldValue, first)
+			XCTAssertEqual(change.newValue, second)
+			observation.invalidate()
+			expect.fulfill()
+		}
+
+		Defaults[key] = second
 
 		waitForExpectations(timeout: 10)
 	}
@@ -416,7 +505,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObservePreventPropagationCombine() {
 		let key1 = Defaults.Key<Bool?>("preventPropagation6", default: nil)
 		let expect = expectation(description: "No infinite recursion")
@@ -437,7 +525,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObservePreventPropagationMultipleKeysCombine() {
 		let key1 = Defaults.Key<Bool?>("preventPropagation7", default: nil)
 		let key2 = Defaults.Key<Bool?>("preventPropagation8", default: nil)
@@ -459,7 +546,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObservePreventPropagationModifiersCombine() {
 		let key1 = Defaults.Key<Bool?>("preventPropagation9", default: nil)
 		let expect = expectation(description: "No infinite recursion")
@@ -484,7 +570,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testRemoveDuplicatesObserveKeyCombine() {
 		let key = Defaults.Key<Bool>("observeKey", default: false)
 		let expect = expectation(description: "Observation closure being called")
@@ -499,7 +584,12 @@ final class DefaultsTests: XCTestCase {
 			.collect(expectedArray.count)
 			.sink { result in
 				print("Result array: \(result)")
-				result == expectedArray ? expect.fulfill() : XCTFail("Expected Array is not matched")
+
+				if result == expectedArray {
+					expect.fulfill()
+				} else {
+					XCTFail("Expected Array is not matched")
+				}
 			}
 
 		inputArray.forEach {
@@ -512,7 +602,6 @@ final class DefaultsTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testRemoveDuplicatesOptionalObserveKeyCombine() {
 		let key = Defaults.Key<Bool?>("observeOptionalKey", default: nil)
 		let expect = expectation(description: "Observation closure being called")
@@ -527,7 +616,12 @@ final class DefaultsTests: XCTestCase {
 			.collect(expectedArray.count)
 			.sink { result in
 				print("Result array: \(result)")
-				result == expectedArray ? expect.fulfill() : XCTFail("Expected Array is not matched")
+
+				if result == expectedArray {
+					expect.fulfill()
+				} else {
+					XCTFail("Expected Array is not matched")
+				}
 			}
 
 		inputArray.forEach {
@@ -624,7 +718,6 @@ final class DefaultsTests: XCTestCase {
 		}
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testImmediatelyFinishingPublisherCombine() {
 		let key = Defaults.Key<Bool>("observeKey", default: false)
 		let expect = expectation(description: "Observation closure being called without crashing")
@@ -646,5 +739,65 @@ final class DefaultsTests: XCTestCase {
 
 	func testKeyHashable() {
 		_ = Set([Defaults.Key<Bool>("hashableKeyTest", default: false)])
+	}
+
+	func testUpdates() async {
+		let key = Defaults.Key<Bool>("updatesKey", default: false)
+
+		async let waiter = Defaults.updates(key, initial: false).first { $0 }
+
+		try? await Task.sleep(seconds: 0.1)
+
+		Defaults[key] = true
+
+		guard let result = await waiter else {
+			XCTFail()
+			return
+		}
+
+		XCTAssertTrue(result)
+	}
+
+	func testUpdatesMultipleKeys() async {
+		let key1 = Defaults.Key<Bool>("updatesMultipleKey1", default: false)
+		let key2 = Defaults.Key<Bool>("updatesMultipleKey2", default: false)
+		let counter = Counter()
+
+		async let waiter: Void = {
+			for await _ in Defaults.updates([key1, key2], initial: false) {
+				await counter.increment()
+
+				if await counter.count == 2 {
+					break
+				}
+			}
+		}()
+
+		try? await Task.sleep(seconds: 0.1)
+
+		Defaults[key1] = true
+		Defaults[key2] = true
+
+		await waiter
+
+		let count = await counter.count
+		XCTAssertEqual(count, 2)
+	}
+}
+
+actor Counter {
+	private var _count = 0
+
+	var count: Int { _count }
+
+	func increment() {
+		_count += 1
+	}
+}
+
+// TODO: Remove when testing on macOS 13.
+extension Task<Never, Never> {
+	static func sleep(seconds: TimeInterval) async throws {
+		try await sleep(nanoseconds: UInt64(seconds * Double(NSEC_PER_SEC)))
 	}
 }

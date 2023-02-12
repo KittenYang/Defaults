@@ -1,5 +1,9 @@
 import Foundation
-
+#if DEBUG
+#if canImport(OSLog)
+import OSLog
+#endif
+#endif
 
 extension Decodable {
 	init?(jsonData: Data) {
@@ -20,7 +24,7 @@ extension Decodable {
 }
 
 
-final class ObjectAssociation<T: Any> {
+final class ObjectAssociation<T> {
 	subscript(index: AnyObject) -> T? {
 		get {
 			objc_getAssociatedObject(index, Unmanaged.passUnretained(self).toOpaque()) as! T?
@@ -59,7 +63,7 @@ final class LifetimeAssociation {
 
 	When either the owner or the new `LifetimeAssociation` is destroyed, the given deinit handler, if any, is called.
 
-	```
+	```swift
 	class Ghost {
 		var association: LifetimeAssociation?
 
@@ -104,8 +108,8 @@ final class LifetimeAssociation {
 
 	private func invalidate() {
 		guard
-			let owner = owner,
-			let wrappedObject = wrappedObject,
+			let owner,
+			let wrappedObject,
 			var associatedObjects = Self.associatedObjects[owner],
 			let wrappedObjectAssociationIndex = associatedObjects.firstIndex(where: { $0 === wrappedObject })
 		else {
@@ -124,29 +128,15 @@ A protocol for making generic type constraints of optionals.
 
 - Note: It's intentionally not including `associatedtype Wrapped` as that limits a lot of the use-cases.
 */
-public protocol _DefaultsOptionalType: ExpressibleByNilLiteral {
+public protocol _DefaultsOptionalProtocol: ExpressibleByNilLiteral {
 	/**
 	This is useful as you cannot compare `_OptionalType` to `nil`.
 	*/
 	var isNil: Bool { get }
 }
 
-extension Optional: _DefaultsOptionalType {
+extension Optional: _DefaultsOptionalProtocol {
 	public var isNil: Bool { self == nil }
-}
-
-
-extension DispatchQueue {
-	/**
-	Performs the `execute` closure immediately if we're on the main thread or asynchronously puts it on the main thread otherwise.
-	*/
-	static func mainSafeAsync(execute work: @escaping () -> Void) {
-		if Thread.isMainThread {
-			work()
-		} else {
-			main.async(execute: work)
-		}
-	}
 }
 
 
@@ -160,6 +150,7 @@ extension Sequence {
 	}
 }
 
+
 extension Collection {
 	subscript(safe index: Index) -> Element? {
 		indices.contains(index) ? self[index] : nil
@@ -167,13 +158,27 @@ extension Collection {
 }
 
 
+extension Collection {
+	func indexed() -> some Sequence<(Index, Element)> {
+		zip(indices, self)
+	}
+}
+
+extension Defaults {
+	@usableFromInline
+	internal static func isValidKeyPath(name: String) -> Bool {
+		// The key must be ASCII, not start with @, and cannot contain a dot.
+		return !name.starts(with: "@") && name.allSatisfy { $0 != "." && $0.isASCII }
+	}
+}
+
 extension Defaults.Serializable {
 	/**
 	Cast a `Serializable` value to `Self`.
 
 	Converts a natively supported type from `UserDefaults` into `Self`.
 
-	```
+	```swift
 	guard let anyObject = object(forKey: key) else {
 		return nil
 	}
@@ -181,18 +186,20 @@ extension Defaults.Serializable {
 	return Value.toValue(anyObject)
 	```
 	*/
-	static func toValue(_ anyObject: Any) -> Self? {
-		// Return directly if `anyObject` can cast to Value, since it means `Value` is a natively supported type.
+	static func toValue<T: Defaults.Serializable>(_ anyObject: Any, type: T.Type = Self.self) -> T? {
 		if
-			isNativelySupportedType,
-			let anyObject = anyObject as? Self
+			T.isNativelySupportedType,
+			let anyObject = anyObject as? T
 		{
 			return anyObject
-		} else if let value = bridge.deserialize(anyObject as? Serializable) {
-			return value as? Self
 		}
 
-		return nil
+		guard let nextType = T.Serializable.self as? any Defaults.Serializable.Type else {
+			// This is a special case for the types which do not conform to `Defaults.Serializable` (for example, `Any`).
+			return T.bridge.deserialize(anyObject as? T.Serializable) as? T
+		}
+
+		return T.bridge.deserialize(toValue(anyObject, type: nextType) as? T.Serializable) as? T
 	}
 
 	/**
@@ -200,18 +207,76 @@ extension Defaults.Serializable {
 
 	Converts `Self` into `UserDefaults` native support type.
 
-	```
+	```swift
 	set(Value.toSerialize(value), forKey: key)
 	```
 	*/
-	static func toSerializable(_ value: Self) -> Any? {
-		// Return directly if `Self` is a natively supported type, since it does not need serialization.
-		if isNativelySupportedType {
+	@usableFromInline
+	internal static func toSerializable<T: Defaults.Serializable>(_ value: T) -> Any? {
+		if T.isNativelySupportedType {
 			return value
-		} else if let serialized = bridge.serialize(value as? Value) {
+		}
+
+		guard let serialized = T.bridge.serialize(value as? T.Value) else {
+			return nil
+		}
+
+		guard let next = serialized as? any Defaults.Serializable else {
+			// This is a special case for the types which do not conform to `Defaults.Serializable` (for example, `Any`).
 			return serialized
 		}
 
-		return nil
+		return toSerializable(next)
 	}
+}
+
+#if DEBUG
+/**
+Get SwiftUI dynamic shared object.
+
+Reference: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/dyld.3.html
+*/
+@usableFromInline
+internal let dynamicSharedObject: UnsafeMutableRawPointer = {
+	let imageCount = _dyld_image_count()
+	for imageIndex in 0..<imageCount {
+		guard
+			let name = _dyld_get_image_name(imageIndex),
+			// Use `/SwiftUI` instead of `SwiftUI` to prevent any library named `XXSwiftUI`.
+			String(cString: name).hasSuffix("/SwiftUI"),
+			let header = _dyld_get_image_header(imageIndex)
+		else {
+			continue
+		}
+
+		return UnsafeMutableRawPointer(mutating: header)
+	}
+
+	return UnsafeMutableRawPointer(mutating: #dsohandle)
+}()
+#endif
+
+@_transparent
+@usableFromInline
+internal func runtimeWarn(
+	_ condition: @autoclosure() -> Bool, _ message: @autoclosure () -> String
+) {
+#if DEBUG
+#if canImport(OSLog)
+	let message = message()
+	let condition = condition()
+	if !condition {
+		os_log(
+			.fault,
+			// A token that identifies the containing executable or dylib image.
+			dso: dynamicSharedObject,
+			log: OSLog(subsystem: "com.apple.runtime-issues", category: "Defaults"),
+			"%@",
+			message
+		)
+	}
+#else
+	assert(condition, message)
+#endif
+#endif
 }

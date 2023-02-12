@@ -7,7 +7,7 @@ struct DefaultsSetAlgebra<Element: Defaults.Serializable & Hashable>: SetAlgebra
 
 	init() {}
 
-	init<S: Sequence>(_ sequence: __owned S) where Element == S.Element {
+	init(_ sequence: __owned some Sequence<Element>) {
 		self.store = Set(sequence)
 	}
 
@@ -19,18 +19,18 @@ struct DefaultsSetAlgebra<Element: Defaults.Serializable & Hashable>: SetAlgebra
 		store.contains(member)
 	}
 
-	func union(_ other: DefaultsSetAlgebra) -> DefaultsSetAlgebra {
-		DefaultsSetAlgebra(store.union(other.store))
+	func union(_ other: Self) -> Self {
+		Self(store.union(other.store))
 	}
 
-	func intersection(_ other: DefaultsSetAlgebra) -> DefaultsSetAlgebra {
-		var defaultsSetAlgebra = DefaultsSetAlgebra()
+	func intersection(_ other: Self) -> Self {
+		var defaultsSetAlgebra = Self()
 		defaultsSetAlgebra.store = store.intersection(other.store)
 		return defaultsSetAlgebra
 	}
 
-	func symmetricDifference(_ other: DefaultsSetAlgebra) -> DefaultsSetAlgebra {
-		var defaultedSetAlgebra = DefaultsSetAlgebra()
+	func symmetricDifference(_ other: Self) -> Self {
+		var defaultedSetAlgebra = Self()
 		defaultedSetAlgebra.store = store.symmetricDifference(other.store)
 		return defaultedSetAlgebra
 	}
@@ -206,7 +206,6 @@ final class DefaultsSetAlgebraTests: XCTestCase {
 		XCTAssertEqual(Defaults[.setAlgebraDictionary]["1"], .init([fixtureSetAlgebra2, fixtureSetAlgebra3]))
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObserveKeyCombine() {
 		let key = Defaults.Key<DefaultsSetAlgebra<Int>>("observeSetAlgebraKeyCombine", default: .init([fixtureSetAlgebra]))
 		let expect = expectation(description: "Observation closure being called")
@@ -234,7 +233,6 @@ final class DefaultsSetAlgebraTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObserveOptionalKeyCombine() {
 		let key = Defaults.Key<DefaultsSetAlgebra<Int>?>("observeSetAlgebraOptionalKeyCombine")
 		let expect = expectation(description: "Observation closure being called")
@@ -263,7 +261,6 @@ final class DefaultsSetAlgebraTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObserveArrayKeyCombine() {
 		let key = Defaults.Key<[DefaultsSetAlgebra<Int>]>("observeSetAlgebraArrayKeyCombine", default: [.init([fixtureSetAlgebra])])
 		let expect = expectation(description: "Observation closure being called")
@@ -291,7 +288,6 @@ final class DefaultsSetAlgebraTests: XCTestCase {
 		waitForExpectations(timeout: 10)
 	}
 
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	func testObserveDictionaryKeyCombine() {
 		let key = Defaults.Key<[String: DefaultsSetAlgebra<Int>]>("observeSetAlgebraDictionaryKeyCombine", default: ["0": .init([fixtureSetAlgebra])])
 		let expect = expectation(description: "Observation closure being called")
