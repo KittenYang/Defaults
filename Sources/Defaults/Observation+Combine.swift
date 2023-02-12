@@ -1,4 +1,3 @@
-#if canImport(Combine)
 import Foundation
 import Combine
 
@@ -6,7 +5,6 @@ extension Defaults {
 	/**
 	Custom `Subscription` for `UserDefaults` key observation.
 	*/
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	final class DefaultsSubscription<SubscriberType: Subscriber>: Subscription where SubscriberType.Input == BaseChange {
 		private var subscriber: SubscriberType?
 		private var observation: UserDefaultsKeyObservation?
@@ -43,7 +41,6 @@ extension Defaults {
 	/**
 	Custom Publisher, which is using DefaultsSubscription.
 	*/
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	struct DefaultsPublisher: Publisher {
 		typealias Output = BaseChange
 		typealias Failure = Never
@@ -58,7 +55,7 @@ extension Defaults {
 			self.options = options
 		}
 
-		func receive<S>(subscriber: S) where S: Subscriber, Failure == S.Failure, Output == S.Input {
+		func receive(subscriber: some Subscriber<Output, Failure>) {
 			let subscription = DefaultsSubscription(
 				subscriber: subscriber,
 				suite: suite,
@@ -74,7 +71,7 @@ extension Defaults {
 	/**
 	Returns a type-erased `Publisher` that publishes changes related to the given key.
 
-	```
+	```swift
 	extension Defaults.Keys {
 		static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
 	}
@@ -86,8 +83,9 @@ extension Defaults {
 		//=> false
 	}
 	```
+
+	- Warning: This method exists for backwards compatibility and will be deprecated sometime in the future. Use ``Defaults/updates(_:initial:)-9eh8`` instead.
 	*/
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	public static func publisher<Value: Serializable>(
 		_ key: Key<Value>,
 		options: ObservationOptions = [.initial]
@@ -100,10 +98,11 @@ extension Defaults {
 
 	/**
 	Publisher for multiple `Key<T>` observation, but without specific information about changes.
+
+	- Warning: This method exists for backwards compatibility and will be deprecated sometime in the future. Use ``Defaults/updates(_:initial:)-9eh8`` instead.
 	*/
-	@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, iOSApplicationExtension 13.0, macOSApplicationExtension 10.15, tvOSApplicationExtension 13.0, watchOSApplicationExtension 6.0, *)
 	public static func publisher(
-		keys: AnyKey...,
+		keys: _AnyKey...,
 		options: ObservationOptions = [.initial]
 	) -> AnyPublisher<Void, Never> {
 		let initial = Empty<Void, Never>(completeImmediately: false).eraseToAnyPublisher()
@@ -122,4 +121,3 @@ extension Defaults {
 		return combinedPublisher
 	}
 }
-#endif

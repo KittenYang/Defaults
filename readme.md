@@ -4,19 +4,16 @@
 
 Store key-value pairs persistently across launches of your app.
 
-It uses `NSUserDefaults` underneath but exposes a type-safe facade with lots of nice conveniences.
+It uses `UserDefaults` underneath but exposes a type-safe facade with lots of nice conveniences.
 
-It's used in production by apps like [Gifski](https://github.com/sindresorhus/Gifski), [Dato](https://sindresorhus.com/dato), [Lungo](https://sindresorhus.com/lungo), [Battery Indicator](https://sindresorhus.com/battery-indicator), and [HEIC Converter](https://sindresorhus.com/heic-converter).
-
-For a real-world example, see the [Plash app](https://github.com/sindresorhus/Plash/blob/533dbc888d8ba3bd9581e60320af282a22c53f85/Plash/Constants.swift#L9-L18).
+It's used in production by [all my apps](https://sindresorhus.com/apps) (1 million+ users).
 
 ## Highlights
 
 - **Strongly typed:** You declare the type and default value upfront.
+- **SwiftUI:** Property wrapper that updates the view when the `UserDefaults` value changes.
 - **Codable support:** You can store any [Codable](https://developer.apple.com/documentation/swift/codable) value, like an enum.
 - **NSSecureCoding support:** You can store any [NSSecureCoding](https://developer.apple.com/documentation/foundation/nssecurecoding) value.
-- **SwiftUI:** Property wrapper that updates the view when the `UserDefaults` value changes.
-- **Publishers:** Combine publishers built-in.
 - **Observation:** Observe changes to keys.
 - **Debuggable:** The data is stored as JSON-serialized values.
 - **Customizable:** You can serialize and deserialize your own type in your own way.
@@ -26,57 +23,23 @@ For a real-world example, see the [Plash app](https://github.com/sindresorhus/Pl
 - You define strongly-typed identifiers in a single place and can use them everywhere.
 - You also define the default values in a single place instead of having to remember what default value you used in other places.
 - You can use it outside of SwiftUI.
-- Comes with Combine publisher.
+- You can observe value updates.
 - Supports many more types, even `Codable`.
 - Easy to add support for your own custom types.
 - Comes with a convenience SwiftUI `Toggle` component.
 
-
 ## Compatibility
 
-- macOS 10.13+
-- iOS 12+
-- tvOS 12+
-- watchOS 5+
-
-<br>
-
----
-
-<div align="center">
-	<p>
-		<p>
-			<sup>
-				<a href="https://github.com/sponsors/sindresorhus">Sindre's open source work is supported by the community</a>
-			</sup>
-		</p>
-		<sup>Special thanks to:</sup>
-		<br>
-		<br>
-		<a href="https://keygen.sh">
-			<div>
-				<img src="https://sindresorhus.com/assets/thanks/keygen-logo.svg" width="210" alt="Keygen">
-			</div>
-			<b>A dead-simple software licensing and distribution API built for developers</b>
-		</a>
-		<br>
-		<br>
-	</p>
-</div>
-
----
-
-<br>
-
-## Migration Guides
-
-#### [From v4 to v5](./migration.md)
+- macOS 10.15+
+- iOS 13+
+- tvOS 13+
+- watchOS 6+
 
 ## Install
 
 Add `https://github.com/sindresorhus/Defaults` in the [“Swift Package Manager” tab in Xcode](https://developer.apple.com/documentation/xcode/adding_package_dependencies_to_your_app).
 
-**There are some issues running Defaults with Xcode 13.3 because of a Swift bug. [See the workaround](workaround.md).**
+**Requires Xcode 14.1 or later**
 
 ## Support types
 
@@ -108,12 +71,13 @@ If a type conforms to both `NSSecureCoding` and `Codable`, then `Codable` will b
 
 ## Usage
 
-You declare the defaults keys upfront with type and default value.
+[API documentation.](https://swiftpackageindex.com/sindresorhus/Defaults/documentation/defaults)
 
-**Do not use a dot in the key name, because of [this bug](https://github.com/sindresorhus/Defaults/issues/59).**
+You declare the defaults keys upfront with a type and default value.
+
+**The key name must be ASCII, not start with `@`, and cannot contain a dot (`.`).**
 
 ```swift
-import Cocoa
 import Defaults
 
 extension Defaults.Keys {
@@ -152,6 +116,14 @@ if let name = Defaults[.name] {
 ```
 
 The default value is then `nil`.
+
+You can also specify a dynamic default value. This can be useful when the default value may change during the lifetime of the app:
+
+```swift
+extension Defaults.Keys {
+	static let camera = Key<AVCaptureDevice?>("camera") { .default(for: .video) }
+}
+```
 
 ---
 
@@ -268,70 +240,16 @@ extension Defaults.Keys {
 	static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
 }
 
-let observer = Defaults.observe(.isUnicornMode) { change in
-	// Initial event
-	print(change.oldValue)
-	//=> false
-	print(change.newValue)
-	//=> false
+// …
 
-	// First actual event
-	print(change.oldValue)
-	//=> false
-	print(change.newValue)
-	//=> true
+Task {
+	for await value in Defaults.updates(.isUnicornMode) {
+		print("Value:", value)
+	}
 }
-
-Defaults[.isUnicornMode] = true
 ```
 
 In contrast to the native `UserDefaults` key observation, here you receive a strongly-typed change object.
-
-There is also an observation API using the [Combine](https://developer.apple.com/documentation/combine) framework, exposing a [Publisher](https://developer.apple.com/documentation/combine/publisher) for key changes:
-
-```swift
-let publisher = Defaults.publisher(.isUnicornMode)
-
-let cancellable = publisher.sink { change in
-	// Initial event
-	print(change.oldValue)
-	//=> false
-	print(change.newValue)
-	//=> false
-
-	// First actual event
-	print(change.oldValue)
-	//=> false
-	print(change.newValue)
-	//=> true
-}
-
-Defaults[.isUnicornMode] = true
-
-// To invalidate the observation.
-cancellable.cancel()
-```
-
-### Invalidate observations automatically
-
-```swift
-extension Defaults.Keys {
-	static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
-}
-
-final class Foo {
-	init() {
-		Defaults.observe(.isUnicornMode) { change in
-			print(change.oldValue)
-			print(change.newValue)
-		}.tieToLifetime(of: self)
-	}
-}
-
-Defaults[.isUnicornMode] = true
-```
-
-The observation will be valid until `self` is deinitialized.
 
 ### Reset keys to their default values
 
@@ -412,6 +330,9 @@ extension Defaults.Keys {
 print(UserDefaults.standard.bool(forKey: Defaults.Keys.isUnicornMode.name))
 //=> true
 ```
+
+> **Note** 
+> A `Defaults.Key` with a dynamic default value will not register the default value in `UserDefaults`.
 
 ## API
 
@@ -498,53 +419,6 @@ Reset the given keys back to their default values.
 
 You can also specify string keys, which can be useful if you need to store some keys in a collection, as it's not possible to store `Defaults.Key` in a collection because it's generic.
 
-#### `Defaults.observe`
-
-```swift
-Defaults.observe<T: Codable>(
-	_ key: Defaults.Key<T>,
-	options: ObservationOptions = [.initial],
-	handler: @escaping (KeyChange<T>) -> Void
-) -> Defaults.Observation
-```
-
-Type: `func`
-
-Observe changes to a key or an optional key.
-
-By default, it will also trigger an initial event on creation. This can be useful for setting default values on controls. You can override this behavior with the `options` argument.
-
-#### `Defaults.observe(keys: keys..., options:)`
-
-Type: `func`
-
-Observe multiple keys of any type, but without any information about the changes.
-
-Options are the same as in `.observe(…)` for a single key.
-
-#### `Defaults.publisher(_ key:, options:)`
-
-```swift
-Defaults.publisher<T: Codable>(
-	_ key: Defaults.Key<T>,
-	options: ObservationOptions = [.initial]
-) -> AnyPublisher<KeyChange<T>, Never>
-```
-
-Type: `func`
-
-Observation API using [Publisher](https://developer.apple.com/documentation/combine/publisher) from the [Combine](https://developer.apple.com/documentation/combine) framework.
-
-Available on macOS 10.15+, iOS 13.0+, tvOS 13.0+, and watchOS 6.0+.
-
-#### `Defaults.publisher(keys: keys…, options:)`
-
-Type: `func`
-
-[Combine](https://developer.apple.com/documentation/combine) observation API for multiple key observation, but without specific information about changes.
-
-Available on macOS 10.15+, iOS 13.0+, tvOS 13.0+, and watchOS 6.0+.
-
 #### `Defaults.removeAll`
 
 ```swift
@@ -554,47 +428,6 @@ Defaults.removeAll(suite: UserDefaults = .standard)
 Type: `func`
 
 Remove all entries from the given `UserDefaults` suite.
-
-### `Defaults.Observation`
-
-Type: `protocol`
-
-Represents an observation of a defaults key.
-
-#### `Defaults.Observation#invalidate`
-
-```swift
-Defaults.Observation#invalidate()
-```
-
-Type: `func`
-
-Invalidate the observation.
-
-#### `Defaults.Observation#tieToLifetime`
-
-```swift
-@discardableResult
-Defaults.Observation#tieToLifetime(of weaklyHeldObject: AnyObject) -> Self
-```
-
-Type: `func`
-
-Keep the observation alive for as long as, and no longer than, another object exists.
-
-When `weaklyHeldObject` is deinitialized, the observation is invalidated automatically.
-
-#### `Defaults.Observation.removeLifetimeTie`
-
-```swift
-Defaults.Observation#removeLifetimeTie()
-```
-
-Type: `func`
-
-Break the lifetime tie created by `tieToLifetime(of:)`, if one exists.
-
-The effects of any call to `tieToLifetime(of:)` are reversed. Note however that if the tied-to object has already died, then the observation is already invalid and this method has no logical effect.
 
 #### `Defaults.withoutPropagation(_ closure:)`
 
@@ -670,7 +503,7 @@ struct UserBridge: Defaults.Bridge {
 	typealias Serializable = [String: String]
 
 	public func serialize(_ value: Value?) -> Serializable? {
-		guard let value = value else {
+		guard let value else {
 			return nil
 		}
 
@@ -682,7 +515,7 @@ struct UserBridge: Defaults.Bridge {
 
 	public func deserialize(_ object: Serializable?) -> Value? {
 		guard
-			let object = object,
+			let object,
 			let name = object["name"],
 			let age = object["age"]
 		else {
@@ -970,15 +803,16 @@ It's inspired by that package and other solutions. The main difference is that t
 ## Maintainers
 
 - [Sindre Sorhus](https://github.com/sindresorhus)
-- [Kacper Rączy](https://github.com/fredyshox)
 - [@hank121314](https://github.com/hank121314)
+
+**Former**
+
+- [Kacper Rączy](https://github.com/fredyshox)
 
 ## Related
 
-- [Preferences](https://github.com/sindresorhus/Preferences) - Add a preferences window to your macOS app
 - [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) - Add user-customizable global keyboard shortcuts to your macOS app
 - [LaunchAtLogin](https://github.com/sindresorhus/LaunchAtLogin) - Add "Launch at Login" functionality to your macOS app
-- [Regex](https://github.com/sindresorhus/Regex) - Swifty regular expressions
 - [DockProgress](https://github.com/sindresorhus/DockProgress) - Show progress in your app's Dock icon
 - [Gifski](https://github.com/sindresorhus/Gifski) - Convert videos to high-quality GIFs on your Mac
 - [More…](https://github.com/search?q=user%3Asindresorhus+language%3Aswift)

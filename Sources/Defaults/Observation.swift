@@ -1,12 +1,12 @@
 import Foundation
 
-public protocol DefaultsObservation: AnyObject {
+public protocol _DefaultsObservation: AnyObject {
 	func invalidate()
 
 	/**
 	Keep this observation alive for as long as, and no longer than, another object exists.
 
-	```
+	```swift
 	Defaults.observe(.xyz) { [unowned self] change in
 		self.xyz = change.newValue
 	}.tieToLifetime(of: self)
@@ -25,7 +25,7 @@ public protocol DefaultsObservation: AnyObject {
 }
 
 extension Defaults {
-	public typealias Observation = DefaultsObservation
+	public typealias Observation = _DefaultsObservation
 
 	public enum ObservationOption {
 		/**
@@ -43,7 +43,7 @@ extension Defaults {
 
 	private static func deserialize<Value: Serializable>(_ value: Any?, to type: Value.Type) -> Value? {
 		guard
-			let value = value,
+			let value,
 			!(value is NSNull)
 		else {
 			return nil
@@ -95,7 +95,7 @@ extension Defaults {
 
 	- Note: This only works with `Defaults.observe()` and `Defaults.publisher()`. User-made KVO will not be affected.
 
-	```
+	```swift
 	let observer = Defaults.observe(keys: .key1, .key2) {
 		// …
 
@@ -140,7 +140,7 @@ extension Defaults {
 			object?.addObserver(self, forKeyPath: key, options: options.toNSKeyValueObservingOptions, context: nil)
 		}
 
-		public func invalidate() {
+		func invalidate() {
 			object?.removeObserver(self, forKeyPath: key, context: nil)
 			object = nil
 			lifetimeAssociation?.cancel()
@@ -148,7 +148,7 @@ extension Defaults {
 
 		private var lifetimeAssociation: LifetimeAssociation?
 
-		public func tieToLifetime(of weaklyHeldObject: AnyObject) -> Self {
+		func tieToLifetime(of weaklyHeldObject: AnyObject) -> Self {
 			// swiftlint:disable:next trailing_closure
 			lifetimeAssociation = LifetimeAssociation(of: self, with: weaklyHeldObject, deinitHandler: { [weak self] in
 				self?.invalidate()
@@ -157,7 +157,7 @@ extension Defaults {
 			return self
 		}
 
-		public func removeLifetimeTie() {
+		func removeLifetimeTie() {
 			lifetimeAssociation?.cancel()
 		}
 
@@ -216,7 +216,7 @@ extension Defaults {
 			invalidate()
 		}
 
-		public func start(options: ObservationOptions) {
+		func start(options: ObservationOptions) {
 			for observable in observables {
 				observable.suite?.addObserver(
 					self,
@@ -227,7 +227,7 @@ extension Defaults {
 			}
 		}
 
-		public func invalidate() {
+		func invalidate() {
 			for observable in observables {
 				observable.suite?.removeObserver(self, forKeyPath: observable.key, context: &Self.observationContext)
 				observable.suite = nil
@@ -236,7 +236,7 @@ extension Defaults {
 			lifetimeAssociation?.cancel()
 		}
 
-		public func tieToLifetime(of weaklyHeldObject: AnyObject) -> Self {
+		func tieToLifetime(of weaklyHeldObject: AnyObject) -> Self {
 			// swiftlint:disable:next trailing_closure
 			lifetimeAssociation = LifetimeAssociation(of: self, with: weaklyHeldObject, deinitHandler: { [weak self] in
 				self?.invalidate()
@@ -245,7 +245,7 @@ extension Defaults {
 			return self
 		}
 
-		public func removeLifetimeTie() {
+		func removeLifetimeTie() {
 			lifetimeAssociation?.cancel()
 		}
 
@@ -283,7 +283,7 @@ extension Defaults {
 	/**
 	Observe a defaults key.
 
-	```
+	```swift
 	extension Defaults.Keys {
 		static let isUnicornMode = Key<Bool>("isUnicornMode", default: false)
 	}
@@ -293,6 +293,8 @@ extension Defaults {
 		//=> false
 	}
 	```
+
+	- Warning: This method exists for backwards compatibility and will be deprecated sometime in the future. Use ``Defaults/updates(_:initial:)-9eh8`` instead.
 	*/
 	public static func observe<Value: Serializable>(
 		_ key: Key<Value>,
@@ -312,7 +314,7 @@ extension Defaults {
 	/**
 	Observe multiple keys of any type, but without any information about the changes.
 
-	```
+	```swift
 	extension Defaults.Keys {
 		static let setting1 = Key<Bool>("setting1", default: false)
 		static let setting2 = Key<Bool>("setting2", default: true)
@@ -322,9 +324,11 @@ extension Defaults {
 		// …
 	}
 	```
+
+	- Warning: This method exists for backwards compatibility and will be deprecated sometime in the future. Use ``Defaults/updates(_:initial:)-9eh8`` instead.
 	*/
 	public static func observe(
-		keys: AnyKey...,
+		keys: _AnyKey...,
 		options: ObservationOptions = [.initial],
 		handler: @escaping () -> Void
 	) -> Observation {
